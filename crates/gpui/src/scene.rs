@@ -325,6 +325,7 @@ impl Scene {
     }
 
     pub fn replay(&mut self, range: Range<usize>, prev_scene: &Scene) {
+        let fast_offset = crate::fast::paint_scale::suspend(self);
         crate::fast::layers::paint::replay_layers(self, range.clone(), prev_scene);
         let mut quads = crate::fast::scene::QuadRun::default(); // fast: split quads insert together
         let operations = &prev_scene.paint_operations[range]; // fast
@@ -368,6 +369,7 @@ impl Scene {
             }
         }
         quads.flush(self); // fast
+        crate::fast::paint_scale::resume(self, fast_offset);
     }
 
     pub fn finish(&mut self) {

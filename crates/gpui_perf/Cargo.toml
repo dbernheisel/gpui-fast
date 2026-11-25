@@ -37,6 +37,10 @@ required-features = ["fast"]
 name = "linux_webview"
 required-features = ["fast"]
 
+[[example]]
+name = "canvas_scale"
+required-features = ["fast"]
+
 [[test]]
 name = "windows_manifest_coexistence"
 required-features = ["fast", "upstream"]

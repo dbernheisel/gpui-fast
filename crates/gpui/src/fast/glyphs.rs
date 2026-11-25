@@ -3,8 +3,7 @@
 use crate::{
     App, AtlasTile, Bounds, ContentMask, DecorationRun, DevicePixels, FontId, GlyphId, Hsla,
     IsZero, MonochromeSprite, Pixels, Point, RenderGlyphParams, SUBPIXEL_VARIANTS_X,
-    SUBPIXEL_VARIANTS_Y, ScaledPixels, Size, SubpixelSprite, Window,
-    util::round_half_toward_zero,
+    SUBPIXEL_VARIANTS_Y, ScaledPixels, Size, SubpixelSprite, Window, util::round_half_toward_zero,
 };
 use anyhow::Result;
 use std::borrow::Cow;
@@ -222,6 +221,8 @@ impl Window {
                 origin: sprite_origin,
                 size: tile.bounds.size.map(Into::into),
             };
+            let matrix =
+                crate::fast::paint_scale::glyph_matrix(scale_factor, &params, integer_origin);
 
             if subpixel_rendering {
                 self.next_frame.scene.insert_primitive(SubpixelSprite {
@@ -231,7 +232,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: crate::fast::paint_scale::glyph_transformation(scale_factor, params.scale_factor, integer_origin),
+                    transformation: matrix,
                 });
             } else {
                 self.next_frame.scene.insert_primitive(MonochromeSprite {
@@ -241,7 +242,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: crate::fast::paint_scale::glyph_transformation(scale_factor, params.scale_factor, integer_origin),
+                    transformation: matrix,
                 });
             }
         }

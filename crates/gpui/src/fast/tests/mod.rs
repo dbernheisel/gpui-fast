@@ -17,6 +17,7 @@ mod misc;
 mod number_shaping;
 mod observers;
 mod oracle;
+mod paint_scale;
 mod pointer;
 mod retained;
 mod retained_bench;

@@ -1,18 +1,25 @@
-//! SPIKE (SHD-6063): 200 cards on a world layer that `Window::fast_with_paint_scale`
-//! zooms, as a Shade `<Canvas>` would zoom its nodes.
+//! 200 cards on a world layer that `Window::fast_with_paint_scale` zooms, as a Shade
+//! `<Canvas>` zooms its nodes: the paint scale's performance check
+//! (docs/paint-scale.md).
 //!
 //! `SPIKE_ZOOM=2` holds one zoom. `SPIKE_PINCH=3` sweeps the zoom from 0.25 to 4 over that many
-//! seconds, then prints frame and paint times and the process's footprint before and after.
+//! seconds, then prints frame and paint times and the process's footprint before and after;
+//! `SPIKE_REPEAT=6` sweeps up and down that many times, to see whether memory levels off.
 //! `SPIKE_CLICK=1` clicks the first card's button where it draws at the zoom, then where it
-//! would be at 1×, and prints which cards counted a click. A real pinch or ⌘-scroll zooms too.
+//! would be at 1×, and prints which cards counted a click. `SPIKE_CAPTURE=PATH` saves the window
+//! after 2 s (with the `test-support` feature of `gpui_platform`). A real pinch or ⌘-scroll
+//! zooms too.
 
-#[path = "example_support/fonts.rs"]
+extern crate gpui_fast as gpui;
+extern crate gpui_platform_fast as gpui_platform;
+
+#[path = "../../gpui/examples/example_support/fonts.rs"]
 mod example_support;
 
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Context, ElementId, GlobalElementId,
     InspectorElementId, LayoutId, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PinchEvent, PlatformInput, Pixels, Point, ScrollEvent, Style, Window,
+    MouseUpEvent, PinchEvent, Pixels, PlatformInput, Point, ScrollEvent, Style, Window,
     WindowBounds, WindowOptions, div, point, prelude::*, px, rgb, size,
 };
 use gpui_platform::application;
@@ -131,9 +138,16 @@ impl Board {
 /// Where the first card's Run button's middle is, in world points.
 fn first_button() -> Point<Pixels> {
     // The card's padding is 8 and the button sits at its trailing bottom corner.
-    point(px(MARGIN + CARD_W - 8. - 16.), px(MARGIN + CARD_H - 8. - 8.))
+    point(
+        px(MARGIN + CARD_W - 8. - 16.),
+        px(MARGIN + CARD_H - 8. - 8.),
+    )
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the footprint is written once, after the sweep"
+)]
 impl Render for Board {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some((started, seconds)) = self.sweep {
@@ -144,9 +158,17 @@ impl Render for Board {
                 .unwrap_or(1.);
             let u = (started.elapsed().as_secs_f32() / seconds).min(repeat);
             let t = if u >= repeat { 1. } else { u.fract() };
-            let along = if (u as u32) % 2 == 0 { t } else { 1. - t };
+            let along = if (u as u32).is_multiple_of(2) {
+                t
+            } else {
+                1. - t
+            };
             // SPIKE_FLAT holds the zoom at 1 through the sweep: the same redraws, no scale.
-            self.zoom = if std::env::var("SPIKE_FLAT").is_ok() { 1. } else { 0.25 * 16f32.powf(along) };
+            self.zoom = if std::env::var("SPIKE_FLAT").is_ok() {
+                1.
+            } else {
+                0.25 * 16f32.powf(along)
+            };
             let t = u / repeat;
             let mut stats = self.stats.borrow_mut();
             let now = Instant::now();
@@ -284,6 +306,10 @@ fn percentile(values: &[Duration], p: f64) -> Duration {
     sorted[((sorted.len() - 1) as f64 * p).round() as usize]
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "measured once, outside the frames it measures"
+)]
 fn footprint() -> String {
     let output = std::process::Command::new("/usr/bin/footprint")
         .args(["-p", &std::process::id().to_string()])
@@ -292,7 +318,11 @@ fn footprint() -> String {
         .unwrap_or_default();
     output
         .lines()
-        .filter(|line| line.contains("Footprint:") || line.contains("IOAccelerator") || line.contains("IOSurface"))
+        .filter(|line| {
+            line.contains("Footprint:")
+                || line.contains("IOAccelerator")
+                || line.contains("IOSurface")
+        })
         .map(str::trim)
         .collect::<Vec<_>>()
         .join(" | ")

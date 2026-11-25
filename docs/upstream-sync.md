@@ -98,6 +98,16 @@ only hold the hooks that call into it.
    content mask within the viewport of the layer being painted, as hitboxes
    are clipped (`fast::layers::input::hitbox_mask`), and the content mask
    outside one. Only elements that call it are clipped.
+   A fifth exception is `Window::fast_with_paint_scale`, with
+   `Window::fast_paint_scale` and the `PaintScale` it returns (in
+   `fast::paint_scale`, [`paint-scale.md`](paint-scale.md)): a canvas that
+   zooms its world draws a subtree laid out at 1× scaled about a point, with
+   sharp text and hit-testing where it draws. Upstream has no transform for a
+   subtree; an application can only lay its world out again at each zoom,
+   which reflows text and moves every node's layout. The addition is the one
+   method that opens a scope, an accessor for the scope being drawn, and the
+   scope's `map`, `unmap`, `map_bounds`, `unmap_bounds` and `scale`; outside a
+   scope, GPUI draws as it did.
 6. **New files only inside `fast/`, or in our own crates** such as
    `crates/gpui_perf` (benchmarks, examples and the frame-measuring app) and
    `compat/` (the `gpui-pre-*` stand-ins GPUI Kit applications patch in).
@@ -278,6 +288,19 @@ No application-specific timeline policy belongs here.
   well as native wgpu. The existing Metal upload backend and its installer
   are unchanged; CPU updates refuse GPU-written metadata. A native Metal
   producer interface is outside this extension.
+
+- The paint scale (`fast::paint_scale`, [`paint-scale.md`](paint-scale.md)),
+  ours: `Window` gains `fast_with_paint_scale(origin, scale, f)` and
+  `fast_paint_scale()`, and `gpui` exports `PaintScale`. Inside a scope,
+  upstream's own methods answer in the scope's coordinates:
+  `Window::scale_factor` is the display's times the scale, while layout keeps
+  the display's; `Window::mouse_position`, the hitboxes `insert_hitbox` returns
+  and the events a mouse listener registered there gets are local; the window
+  keeps hitboxes where they draw. Deferred draws and views built again on
+  their own draw in the scope they came from, retained views are reused only
+  at the same scope, and scroll containers in a scope paint without scroll
+  layers. Glyphs, emoji and SVGs in a scope rasterize at the quarter octave at
+  or above its scale.
 
 - `scheduler`'s `Clock::utc_now` and `TestClock::set_utc_now` use
   `SystemTime` (exported next to `Instant`, both from `web_time`) instead of
