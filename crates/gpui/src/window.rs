@@ -1280,6 +1280,7 @@ pub struct Window {
     pub(crate) element_offset_stack: Vec<Point<Pixels>>,
     pub(crate) element_opacity: f32,
     pub(crate) content_mask_stack: Vec<ContentMask<Pixels>>,
+    pub(crate) fast_paint_scale: crate::fast::paint_scale::WindowScale,
     pub(crate) requested_autoscroll: Option<Bounds<Pixels>>,
     /// The [`TextInputConfiguration`] most recently forwarded to the platform
     /// window, so that only actual changes are forwarded (reconfiguring a live
@@ -1305,7 +1306,7 @@ pub struct Window {
     pub(crate) fast_pointer_outside: bool,
     modifiers: Modifiers,
     capslock: Capslock,
-    scale_factor: f32,
+    pub(crate) scale_factor: f32,
     pub(crate) bounds_observers: SingleSubscriberSet<AnyObserver>,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SingleSubscriberSet<AnyObserver>,
@@ -2482,6 +2483,7 @@ impl Window {
             rendered_entity_stack: Vec::new(),
             element_offset_stack: Vec::new(),
             content_mask_stack: Vec::new(),
+            fast_paint_scale: crate::fast::paint_scale::WindowScale::default(),
             element_opacity: 1.0,
             requested_autoscroll: None,
             last_text_input_configuration: None,
@@ -3521,7 +3523,7 @@ impl Window {
     /// return 2.0 for a "retina" display, indicating that each logical pixel should actually
     /// be rendered as two pixels on screen.
     pub fn scale_factor(&self) -> f32 {
-        self.scale_factor
+        crate::fast::paint_scale::scale_factor(self, self.scale_factor)
     }
 
     /// Overrides the display scale factor for tests.
@@ -5373,7 +5375,7 @@ impl Window {
             glyph_id,
             font_size,
             subpixel_variant,
-            scale_factor,
+            scale_factor: crate::fast::paint_scale::glyph_raster_scale(self, scale_factor),
             is_emoji: false,
             subpixel_rendering,
             dilation,
@@ -5402,7 +5404,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: TransformationMatrix::unit(),
+                    transformation: crate::fast::paint_scale::glyph_transformation(scale_factor, params.scale_factor, integer_origin),
                 });
             } else {
                 self.next_frame.scene.insert_primitive(MonochromeSprite {
@@ -5412,7 +5414,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: TransformationMatrix::unit(),
+                    transformation: crate::fast::paint_scale::glyph_transformation(scale_factor, params.scale_factor, integer_origin),
                 });
             }
         }
@@ -5764,7 +5766,7 @@ impl Window {
         cx.layout_id_buffer.clear();
         cx.layout_id_buffer.extend(children);
         let rem_size = self.rem_size();
-        let scale_factor = self.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(self);
 
         let fast_key = crate::fast::layout_key::layout_key(self);
         self.layout_engine.as_mut().unwrap().request_layout(
@@ -5792,7 +5794,7 @@ impl Window {
         self.invalidator.debug_assert_prepaint();
 
         let rem_size = self.rem_size();
-        let scale_factor = self.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(self);
         let fast_key = crate::fast::layout_key::layout_key(self);
         self.layout_engine
             .as_mut()
@@ -5825,7 +5827,7 @@ impl Window {
     pub fn layout_bounds(&mut self, layout_id: LayoutId) -> Bounds<Pixels> {
         self.invalidator.debug_assert_prepaint();
 
-        let scale_factor = self.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(self);
         let mut bounds = self
             .layout_engine
             .as_mut()
@@ -5854,6 +5856,7 @@ impl Window {
             content_mask,
             behavior,
         };
+        let hitbox = crate::fast::paint_scale::hitbox(self, hitbox);
         self.next_frame.hitboxes.push(hitbox.clone());
         crate::fast::composition::record_input(self, id);
         hitbox
