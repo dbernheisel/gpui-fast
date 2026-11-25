@@ -176,7 +176,7 @@ pub(crate) fn settle_measured_leaves(
     cx: &mut App,
 ) {
     let mut leaves = mem::take(&mut engine.retention.measured_leaves);
-    let scale_factor = window.scale_factor();
+    let scale_factor = crate::fast::paint_scale::layout_scale_factor(window);
     for (node, width) in leaves.0.drain() {
         let Ok(layout) = engine.taffy.layout(node) else {
             continue;
@@ -905,7 +905,7 @@ impl TaffyLayoutEngine {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let scale_factor = window.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(window);
         let bounds = self.layout_bounds(id, scale_factor);
         let origin = self
             .absolute_outer_origins
@@ -1012,7 +1012,7 @@ pub(crate) fn request_layout(
 ) -> LayoutId {
     window.invalidator.debug_assert_prepaint();
     let rem_size = window.rem_size();
-    let scale_factor = window.scale_factor();
+    let scale_factor = crate::fast::paint_scale::layout_scale_factor(window);
     let key = crate::fast::layout_key::layout_key(window);
     request_retained_layout(
         window.layout_engine.as_mut().unwrap(),

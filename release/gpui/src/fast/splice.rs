@@ -24,7 +24,8 @@
 use crate::fast::dependencies::RenderDependencies;
 use crate::fast::retained::{EnclosingRetained, OpenPaint};
 use crate::fast::retained::{
-    PaintStatus, RetainedLayout, RetainedSubtree, ViewLayoutState, ViewPrepaint, ViewPrepaintState,
+    PaintStatus, RetainedContext, RetainedLayout, RetainedSubtree, ViewLayoutState, ViewPrepaint,
+    ViewPrepaintState,
 };
 use crate::fast::text_style::TextStyleStack;
 use crate::key_dispatch::{DispatchNodeId, DispatchTree};
@@ -259,6 +260,7 @@ struct Inherited {
     rem_size_override_stack: SmallVec<[Pixels; 8]>,
     element_opacity: f32,
     composition_surface: crate::fast::composition::GapSurface,
+    paint_scale: Option<crate::fast::paint_scale::PaintScale>,
 }
 
 impl Window {
@@ -268,12 +270,18 @@ impl Window {
         &mut self,
         id: &GlobalElementId,
         rebuild: &Rebuild,
-        content_mask: ContentMask<Pixels>,
-        opacity: f32,
-        composition_surface: Option<crate::fast::composition::CompositionSurfaceId>,
+        context: &RetainedContext,
     ) -> Inherited {
+        let RetainedContext {
+            content_mask,
+            opacity,
+            composition_surface,
+            paint_scale,
+            ..
+        } = *context;
         let parent_ids = &id.ids[..id.ids.len() - 1];
         Inherited {
+            paint_scale: crate::fast::paint_scale::enter_gap(self, paint_scale),
             composition_surface: crate::fast::composition::enter_gap(self, composition_surface),
             element_id_stack: mem::replace(&mut self.element_id_stack, {
                 let mut stack = crate::window::ElementIdStack::default();
@@ -307,6 +315,7 @@ impl Window {
         self.rem_size_override_stack = inherited.rem_size_override_stack;
         self.element_opacity = inherited.element_opacity;
         crate::fast::composition::leave_gap(self, inherited.composition_surface);
+        crate::fast::paint_scale::leave_gap(self, inherited.paint_scale);
     }
 
     /// Lays out the view `id`, dirty only because views nested in it are, as
@@ -648,13 +657,7 @@ impl Window {
         let recording = self.record_claimed_layout_keys();
         let element_states_start = self.next_frame.accessed_element_states.len();
         let dependency_recording = cx.begin_recording_dependencies();
-        let inherited = self.enter_gap(
-            &global_id,
-            &rebuild,
-            context.content_mask,
-            context.opacity,
-            context.composition_surface,
-        );
+        let inherited = self.enter_gap(&global_id, &rebuild, &context);
         // Named for the view's type, as where it was first drawn (see [`rebuildable`]),
         // so the profiler's view timings do not call every view built again on its own
         // `AnyView`.
@@ -843,13 +846,7 @@ impl Window {
             let copied_node = parent
                 .and_then(|parent| dispatch.copied(parent))
                 .filter(|&node| self.next_frame.dispatch_tree.active_node_id() == Some(node));
-            let inherited = self.enter_gap(
-                &gap_id,
-                &rebuild,
-                context.content_mask,
-                context.opacity,
-                context.composition_surface,
-            );
+            let inherited = self.enter_gap(&gap_id, &rebuild, &context);
             // What its element's prepaint does, inside the view around it.
             let bounds = gap
                 .bounds
@@ -995,6 +992,7 @@ impl Window {
                 paint_range: deferred_draw.paint_range.clone(),
                 accessed_entities: deferred_draw.accessed_entities.clone(),
                 enclosing_retained: EnclosingRetained::default(),
+                fast_paint_scale: deferred_draw.fast_paint_scale,
             });
         }
         removed_states
@@ -1076,13 +1074,7 @@ impl Window {
 
             segments.push((cursor.clone(), self.paint_index()));
             self.reuse_paint(cursor.clone()..gap_range.start.clone());
-            let inherited = self.enter_gap(
-                &gap_id,
-                &rebuild,
-                context.content_mask,
-                context.opacity,
-                context.composition_surface,
-            );
+            let inherited = self.enter_gap(&gap_id, &rebuild, &context);
             // What its element's paint does, inside the view around it.
             let element_id = gap.element_id();
             if let Some((node, prepaint)) = gap.prepainted.as_mut() {

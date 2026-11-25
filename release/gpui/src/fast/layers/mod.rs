@@ -133,6 +133,8 @@ pub(crate) fn active(window: &Window, cx: &App) -> bool {
         && !cx.has_active_drag()
         && !crate::fast::a11y::stale(&window.a11y)
         && !window.is_inspector_picking(cx)
+        // A scope's scroll containers paint directly (fast::paint_scale).
+        && crate::fast::paint_scale::current(window).is_none()
 }
 
 /// Ends the frame being drawn: the scrolls before it are taken in, and the
@@ -172,6 +174,7 @@ pub(crate) fn paint_layer<R>(
     f: impl FnOnce(&mut Window) -> R,
 ) -> R {
     if let Some(bounds) = bounds {
+        let bounds = crate::fast::paint_scale::place_bounds(&window.next_frame.scene, bounds);
         window.next_frame.scene.push_layer(bounds);
     }
     let result = f(window);

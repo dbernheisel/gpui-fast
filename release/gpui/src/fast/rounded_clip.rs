@@ -219,7 +219,11 @@ pub(crate) fn paint_children(
     else {
         return paint(window, cx);
     };
-    record(&mut window.next_frame.scene, ClipOperation::Begin(shape));
+    let offset = window.next_frame.scene.fast_paint_offset;
+    record(
+        &mut window.next_frame.scene,
+        ClipOperation::Begin(shape).translated(offset),
+    );
     paint(window, cx);
     record(&mut window.next_frame.scene, ClipOperation::End);
 }

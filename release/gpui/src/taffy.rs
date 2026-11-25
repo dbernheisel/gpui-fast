@@ -201,7 +201,7 @@ impl TaffyLayoutEngine {
             }
         }
 
-        let scale_factor = window.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(window);
 
         let transform = |v: AvailableSpace| match v {
             AvailableSpace::Definite(pixels) => {

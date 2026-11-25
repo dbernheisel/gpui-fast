@@ -154,6 +154,9 @@ pub(crate) struct RetainedContext {
     pub(crate) content_mask: ContentMask<Pixels>,
     pub(crate) text_style: TextStyle,
     pub(crate) opacity: f32,
+    /// The scale it was drawn at (`fast::paint_scale`): what it painted
+    /// holds the scale's device pixels and offset.
+    pub(crate) paint_scale: Option<crate::fast::paint_scale::PaintScale>,
 }
 
 /// What it takes to lay a view out as it was laid out last frame without
@@ -642,6 +645,7 @@ impl Window {
             && context.content_mask == self.content_mask()
             && context.text_style == self.text_style()
             && context.composition_surface == crate::fast::composition::input_surface(self)
+            && context.paint_scale == crate::fast::paint_scale::current(self)
     }
 
     /// Lays out the view last frame's record `previous` stands for as it was
@@ -919,6 +923,7 @@ impl Window {
                     content_mask: ContentMask::default(),
                     text_style: TextStyle::default(),
                     opacity: 1.,
+                    paint_scale: None,
                 }),
                 dependencies: RenderDependencies::default(),
                 own_dependencies: RenderDependencies::default(),
@@ -989,6 +994,7 @@ impl Window {
             content_mask: self.content_mask(),
             text_style: self.text_style(),
             opacity: self.element_opacity,
+            paint_scale: crate::fast::paint_scale::current(self),
         };
         let end = self.prepaint_index();
         let retained = &mut self.next_frame.retained;

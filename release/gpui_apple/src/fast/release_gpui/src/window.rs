@@ -1052,6 +1052,7 @@ pub(crate) struct DeferredDraw {
     /// any phase, restored when its prepaint is reused.
     pub(crate) accessed_entities: FxHashSet<EntityId>,
     pub(crate) enclosing_retained: crate::fast::retained::EnclosingRetained,
+    pub(crate) fast_paint_scale: Option<crate::fast::paint_scale::PaintScale>,
 }
 
 pub(crate) struct Frame {
@@ -1281,6 +1282,7 @@ pub struct Window {
     pub(crate) element_offset_stack: Vec<Point<Pixels>>,
     pub(crate) element_opacity: f32,
     pub(crate) content_mask_stack: Vec<ContentMask<Pixels>>,
+    pub(crate) fast_paint_scale: crate::fast::paint_scale::WindowScale,
     pub(crate) requested_autoscroll: Option<Bounds<Pixels>>,
     /// The [`TextInputConfiguration`] most recently forwarded to the platform
     /// window, so that only actual changes are forwarded (reconfiguring a live
@@ -1306,7 +1308,7 @@ pub struct Window {
     pub(crate) fast_pointer_outside: bool,
     modifiers: Modifiers,
     capslock: Capslock,
-    scale_factor: f32,
+    pub(crate) scale_factor: f32,
     pub(crate) bounds_observers: SingleSubscriberSet<AnyObserver>,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SingleSubscriberSet<AnyObserver>,
@@ -2483,6 +2485,7 @@ impl Window {
             rendered_entity_stack: Vec::new(),
             element_offset_stack: Vec::new(),
             content_mask_stack: Vec::new(),
+            fast_paint_scale: crate::fast::paint_scale::WindowScale::default(),
             element_opacity: 1.0,
             requested_autoscroll: None,
             last_text_input_configuration: None,
@@ -3522,7 +3525,7 @@ impl Window {
     /// return 2.0 for a "retina" display, indicating that each logical pixel should actually
     /// be rendered as two pixels on screen.
     pub fn scale_factor(&self) -> f32 {
-        self.scale_factor
+        crate::fast::paint_scale::scale_factor(self, self.scale_factor)
     }
 
     /// Overrides the display scale factor for tests.
@@ -3804,7 +3807,7 @@ impl Window {
     /// The position of the mouse relative to the window.
     pub fn mouse_position(&self) -> Point<Pixels> {
         crate::fast::dependencies::read_pointer(self);
-        self.mouse_position
+        crate::fast::paint_scale::pointer(self, self.mouse_position)
     }
 
     /// Captures the pointer for the given hitbox. While captured, all mouse move and mouse up
@@ -4373,6 +4376,7 @@ impl Window {
                     )
                 };
                 self.next_frame.dispatch_tree.set_active_node(parent_node);
+                let fast_scope = crate::fast::paint_scale::enter_deferred(self, deferred_draw_ix);
 
                 let prepaint_start = self.prepaint_index();
                 if let Some(mut element) = element {
@@ -4400,6 +4404,7 @@ impl Window {
                     );
                     self.reuse_prepaint(prepaint_range);
                 }
+                crate::fast::paint_scale::leave(self, fast_scope);
                 let prepaint_end = self.prepaint_index();
                 self.next_frame.deferred_draws[deferred_draw_ix].prepaint_range =
                     prepaint_start..prepaint_end;
@@ -4431,6 +4436,7 @@ impl Window {
                 .set_active_node(deferred_draw.parent_node);
 
             let paint_start = self.paint_index();
+            let fast_scope = crate::fast::paint_scale::enter(self, deferred_draw.fast_paint_scale);
             let content_mask = deferred_draw.content_mask;
             if let Some(element) = deferred_draw.element.as_mut() {
                 let enclosing = &deferred_draw.enclosing_retained;
@@ -4449,6 +4455,7 @@ impl Window {
             } else {
                 self.reuse_paint(deferred_draw.paint_range.clone());
             }
+            crate::fast::paint_scale::leave(self, fast_scope);
             let paint_end = self.paint_index();
             deferred_draw.paint_range = paint_start..paint_end;
         }
@@ -4525,6 +4532,7 @@ impl Window {
                     paint_range: deferred_draw.paint_range.clone(),
                     accessed_entities: deferred_draw.accessed_entities.clone(),
                     enclosing_retained: crate::fast::retained::EnclosingRetained::default(),
+                    fast_paint_scale: deferred_draw.fast_paint_scale,
                 }),
         );
     }
@@ -5012,6 +5020,7 @@ impl Window {
             paint_range: PaintIndex::default()..PaintIndex::default(),
             accessed_entities: FxHashSet::default(),
             enclosing_retained: crate::fast::retained::enclosing_retained(self),
+            fast_paint_scale: crate::fast::paint_scale::current(self),
         });
     }
 
@@ -5374,7 +5383,7 @@ impl Window {
             glyph_id,
             font_size,
             subpixel_variant,
-            scale_factor,
+            scale_factor: crate::fast::paint_scale::glyph_raster_scale(self, scale_factor),
             is_emoji: false,
             subpixel_rendering,
             dilation,
@@ -5394,6 +5403,8 @@ impl Window {
                 size: tile.bounds.size.map(Into::into),
             };
             let content_mask = self.snapped_content_mask();
+            let fast_matrix =
+                crate::fast::paint_scale::glyph_matrix(scale_factor, &params, integer_origin);
 
             if subpixel_rendering {
                 self.next_frame.scene.insert_primitive(SubpixelSprite {
@@ -5403,7 +5414,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: TransformationMatrix::unit(),
+                    transformation: fast_matrix,
                 });
             } else {
                 self.next_frame.scene.insert_primitive(MonochromeSprite {
@@ -5413,7 +5424,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: TransformationMatrix::unit(),
+                    transformation: fast_matrix,
                 });
             }
         }
@@ -5466,7 +5477,7 @@ impl Window {
             glyph_id,
             font_size,
             subpixel_variant: Default::default(),
-            scale_factor,
+            scale_factor: crate::fast::paint_scale::glyph_raster_scale(self, scale_factor),
             is_emoji: true,
             subpixel_rendering: false,
             dilation: 0,
@@ -5486,6 +5497,8 @@ impl Window {
                 origin: integer_origin + raster_bounds.origin.map(Into::into),
                 size: tile.bounds.size.map(Into::into),
             };
+            let bounds =
+                crate::fast::paint_scale::emoji(bounds, integer_origin, scale_factor, &params);
             let content_mask = self.snapped_content_mask();
             let opacity = self.element_opacity();
 
@@ -5534,11 +5547,13 @@ impl Window {
 
         let element_opacity = self.element_opacity();
         let bounds = self.snap_bounds(bounds);
+        let fast_svg_raster_scaling =
+            crate::fast::paint_scale::svg_raster(self, SMOOTH_SVG_SCALE_FACTOR);
 
         let params = RenderSvgParams {
             path,
             size: bounds.size.map(|pixels| {
-                DevicePixels::from((pixels.0 * SMOOTH_SVG_SCALE_FACTOR).ceil() as i32)
+                DevicePixels::from((pixels.0 * fast_svg_raster_scaling).ceil() as i32)
             }),
         };
 
@@ -5558,13 +5573,13 @@ impl Window {
         let svg_bounds = Bounds {
             origin: bounds.center()
                 - Point::new(
-                    ScaledPixels(tile.bounds.size.width.0 as f32 / SMOOTH_SVG_SCALE_FACTOR / 2.),
-                    ScaledPixels(tile.bounds.size.height.0 as f32 / SMOOTH_SVG_SCALE_FACTOR / 2.),
+                    ScaledPixels(tile.bounds.size.width.0 as f32 / fast_svg_raster_scaling / 2.),
+                    ScaledPixels(tile.bounds.size.height.0 as f32 / fast_svg_raster_scaling / 2.),
                 ),
             size: tile
                 .bounds
                 .size
-                .map(|value| ScaledPixels(value.0 as f32 / SMOOTH_SVG_SCALE_FACTOR)),
+                .map(|value| ScaledPixels(value.0 as f32 / fast_svg_raster_scaling)),
         };
         let final_bounds = svg_bounds
             .map_origin(|value| ScaledPixels(round_half_toward_zero(value.0)))
@@ -5765,7 +5780,7 @@ impl Window {
         cx.layout_id_buffer.clear();
         cx.layout_id_buffer.extend(children);
         let rem_size = self.rem_size();
-        let scale_factor = self.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(self);
 
         let fast_key = crate::fast::layout_key::layout_key(self);
         self.layout_engine.as_mut().unwrap().request_layout(
@@ -5793,7 +5808,7 @@ impl Window {
         self.invalidator.debug_assert_prepaint();
 
         let rem_size = self.rem_size();
-        let scale_factor = self.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(self);
         let fast_key = crate::fast::layout_key::layout_key(self);
         self.layout_engine
             .as_mut()
@@ -5826,7 +5841,7 @@ impl Window {
     pub fn layout_bounds(&mut self, layout_id: LayoutId) -> Bounds<Pixels> {
         self.invalidator.debug_assert_prepaint();
 
-        let scale_factor = self.scale_factor();
+        let scale_factor = crate::fast::paint_scale::layout_scale_factor(self);
         let mut bounds = self
             .layout_engine
             .as_mut()
@@ -5855,7 +5870,8 @@ impl Window {
             content_mask,
             behavior,
         };
-        self.next_frame.hitboxes.push(hitbox.clone());
+        let fast_hitbox = crate::fast::paint_scale::hitbox(self, hitbox.clone());
+        self.next_frame.hitboxes.push(fast_hitbox);
         crate::fast::composition::record_input(self, id);
         hitbox
     }
@@ -6008,11 +6024,19 @@ impl Window {
         mut listener: impl FnMut(&Event, DispatchPhase, &mut Window, &mut App) + 'static,
     ) {
         self.invalidator.debug_assert_paint();
+        let fast_scope = crate::fast::paint_scale::current(self);
 
         self.next_frame.mouse_listeners.push(Some(Box::new(
             move |event: &dyn Any, phase: DispatchPhase, window: &mut Window, cx: &mut App| {
                 if let Some(event) = event.downcast_ref() {
-                    listener(event, phase, window, cx)
+                    crate::fast::paint_scale::listen(
+                        fast_scope,
+                        &mut listener,
+                        event,
+                        phase,
+                        window,
+                        cx,
+                    )
                 }
             },
         )));

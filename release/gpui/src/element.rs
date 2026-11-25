@@ -447,7 +447,8 @@ impl<E: Element> Drawable<E> {
                         if let Some(role) = self.element.a11y_role() {
                             let node_id = global_id.accesskit_node_id();
                             let mut node = accesskit::Node::new(role);
-                            let scale = window.scale_factor();
+                            let (bounds, scale) =
+                                crate::fast::paint_scale::a11y_bounds(window, bounds);
                             node.set_bounds(accesskit::Rect {
                                 x0: (bounds.origin.x.0 * scale) as f64,
                                 y0: (bounds.origin.y.0 * scale) as f64,

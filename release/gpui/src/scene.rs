@@ -70,6 +70,7 @@ pub struct Scene {
     pub(crate) fast_rounded_clip: crate::fast::rounded_clip::SceneClips,
     pub(crate) fast_quad_pieces: Option<smallvec::SmallVec<[Quad; 5]>>,
     pub layers: crate::fast::layers::scene::SceneLayers,
+    pub(crate) fast_paint_offset: Point<ScaledPixels>,
 }
 
 #[expect(missing_docs)]
@@ -228,7 +229,8 @@ impl Scene {
     }
 
     pub fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
-        let Some(primitive) = crate::fast::scene::quad_piece(self, primitive.into()) else {
+        let primitive = crate::fast::paint_scale::place(self.fast_paint_offset, primitive.into());
+        let Some(primitive) = crate::fast::scene::quad_piece(self, primitive) else {
             return;
         };
         self.try_insert_primitive(primitive);
@@ -324,6 +326,7 @@ impl Scene {
     }
 
     pub fn replay(&mut self, range: Range<usize>, prev_scene: &Scene) {
+        let fast_offset = crate::fast::paint_scale::suspend(self);
         crate::fast::layers::paint::replay_layers(self, range.clone(), prev_scene);
         let mut quads = crate::fast::scene::QuadRun::default(); // fast: split quads insert together
         let operations = &prev_scene.paint_operations[range]; // fast
@@ -367,6 +370,7 @@ impl Scene {
             }
         }
         quads.flush(self); // fast
+        crate::fast::paint_scale::resume(self, fast_offset);
     }
 
     pub fn finish(&mut self) {
