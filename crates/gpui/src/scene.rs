@@ -69,6 +69,7 @@ pub struct Scene {
     pub(crate) fast_rounded_clip: crate::fast::rounded_clip::SceneClips,
     pub(crate) fast_quad_pieces: Option<smallvec::SmallVec<[Quad; 5]>>,
     pub layers: crate::fast::layers::scene::SceneLayers,
+    pub(crate) fast_paint_offset: Point<ScaledPixels>,
 }
 
 #[expect(missing_docs)]
@@ -227,7 +228,8 @@ impl Scene {
     }
 
     pub fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
-        let Some(primitive) = crate::fast::scene::quad_piece(self, primitive.into()) else {
+        let primitive = crate::fast::paint_scale::place(self.fast_paint_offset, primitive.into());
+        let Some(primitive) = crate::fast::scene::quad_piece(self, primitive) else {
             return;
         };
         self.try_insert_primitive(primitive);

@@ -3,7 +3,7 @@
 use crate::{
     App, AtlasTile, Bounds, ContentMask, DecorationRun, DevicePixels, FontId, GlyphId, Hsla,
     IsZero, MonochromeSprite, Pixels, Point, RenderGlyphParams, SUBPIXEL_VARIANTS_X,
-    SUBPIXEL_VARIANTS_Y, ScaledPixels, Size, SubpixelSprite, TransformationMatrix, Window,
+    SUBPIXEL_VARIANTS_Y, ScaledPixels, Size, SubpixelSprite, Window,
     util::round_half_toward_zero,
 };
 use anyhow::Result;
@@ -177,7 +177,7 @@ impl Window {
             glyph_id,
             font_size,
             subpixel_variant,
-            scale_factor,
+            scale_factor: crate::fast::paint_scale::glyph_raster_scale(self, scale_factor),
             is_emoji: false,
             subpixel_rendering,
             dilation,
@@ -231,7 +231,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: TransformationMatrix::unit(),
+                    transformation: crate::fast::paint_scale::glyph_transformation(scale_factor, params.scale_factor, integer_origin),
                 });
             } else {
                 self.next_frame.scene.insert_primitive(MonochromeSprite {
@@ -241,7 +241,7 @@ impl Window {
                     content_mask,
                     color: color.opacity(element_opacity),
                     tile,
-                    transformation: TransformationMatrix::unit(),
+                    transformation: crate::fast::paint_scale::glyph_transformation(scale_factor, params.scale_factor, integer_origin),
                 });
             }
         }
